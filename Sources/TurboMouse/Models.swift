@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 let macDefaultPointerAcceleration = 0.6875
@@ -25,6 +26,17 @@ struct DeviceConfig: Codable, Equatable {
     var smoothScrolling = false
     var scrollStep = 40.0
     var scrollDuration = 0.25
+    var horizontalScrollModifier = "none"
+
+    var horizontalModifierFlags: CGEventFlags? {
+        switch horizontalScrollModifier {
+        case "shift": return .maskShift
+        case "control": return .maskControl
+        case "option": return .maskAlternate
+        case "command": return .maskCommand
+        default: return nil
+        }
+    }
 
     static let windowsMultipliers = [0.03125, 0.0625, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5]
 
@@ -77,6 +89,7 @@ struct DeviceConfig: Codable, Equatable {
         smoothScrolling = try c.decodeIfPresent(Bool.self, forKey: .smoothScrolling) ?? false
         scrollStep = try c.decodeIfPresent(Double.self, forKey: .scrollStep) ?? 40
         scrollDuration = try c.decodeIfPresent(Double.self, forKey: .scrollDuration) ?? 0.25
+        horizontalScrollModifier = try c.decodeIfPresent(String.self, forKey: .horizontalScrollModifier) ?? "none"
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -94,5 +107,6 @@ struct DeviceConfig: Codable, Equatable {
         case smoothScrolling
         case scrollStep
         case scrollDuration
+        case horizontalScrollModifier
     }
 }

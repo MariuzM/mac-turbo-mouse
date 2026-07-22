@@ -7,6 +7,8 @@ final class ScrollSmoother {
 
     var step: Double = 40
     var duration: Double = 0.25
+    var smoothingEnabled = false
+    var horizontalModifier: CGEventFlags?
 
     private static let marker: Int64 = 0x54424D53
 
@@ -76,14 +78,37 @@ final class ScrollSmoother {
               event.getIntegerValueField(.scrollWheelEventIsContinuous) == 0
         else { return Unmanaged.passUnretained(event) }
 
-        let dy = Double(event.getIntegerValueField(.scrollWheelEventDeltaAxis1))
-        let dx = Double(event.getIntegerValueField(.scrollWheelEventDeltaAxis2))
+        let rotate = horizontalModifier.map { event.flags.contains($0) } ?? false
+        guard smoothingEnabled || rotate else { return Unmanaged.passUnretained(event) }
+
+        var dy = Double(event.getIntegerValueField(.scrollWheelEventDeltaAxis1))
+        var dx = Double(event.getIntegerValueField(.scrollWheelEventDeltaAxis2))
         guard dx != 0 || dy != 0 else { return Unmanaged.passUnretained(event) }
 
-        pendingY += dy * step
-        pendingX += dx * step
-        startTimerIfNeeded()
-        return nil
+        if rotate {
+            dx = dy
+            dy = 0
+        }
+
+        if smoothingEnabled {
+            pendingY += dy * step
+            pendingX += dx * step
+            startTimerIfNeeded()
+            return nil
+        }
+
+        let points = event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1)
+        let fixed = event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1)
+        event.setIntegerValueField(.scrollWheelEventDeltaAxis2, value: Int64(dx))
+        event.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: 0)
+        event.setIntegerValueField(.scrollWheelEventPointDeltaAxis2, value: points)
+        event.setIntegerValueField(.scrollWheelEventPointDeltaAxis1, value: 0)
+        event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: fixed)
+        event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: 0)
+        if let horizontalModifier {
+            event.flags.remove(horizontalModifier)
+        }
+        return Unmanaged.passUnretained(event)
     }
 
     private func startTimerIfNeeded() {

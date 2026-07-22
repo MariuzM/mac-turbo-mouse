@@ -184,14 +184,16 @@ final class DeviceManager: ObservableObject {
     }
 
     private func syncSmoother() {
-        let active = configs.values.first { $0.managed && $0.smoothScrolling }
-        if let active, ScrollSmoother.hasAccessibility {
-            ScrollSmoother.shared.step = active.scrollStep
-            ScrollSmoother.shared.duration = active.scrollDuration
-            ScrollSmoother.shared.setEnabled(true)
-        } else {
-            ScrollSmoother.shared.setEnabled(false)
+        let smoothing = configs.values.first { $0.managed && $0.smoothScrolling }
+        let rotating = configs.values.first { $0.managed && $0.horizontalModifierFlags != nil }
+        let smoother = ScrollSmoother.shared
+        if let smoothing {
+            smoother.step = smoothing.scrollStep
+            smoother.duration = smoothing.scrollDuration
         }
+        smoother.smoothingEnabled = smoothing != nil
+        smoother.horizontalModifier = rotating?.horizontalModifierFlags
+        smoother.setEnabled((smoothing != nil || rotating != nil) && ScrollSmoother.hasAccessibility)
     }
 
     private func persist() {

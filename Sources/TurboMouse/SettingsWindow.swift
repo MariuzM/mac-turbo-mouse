@@ -111,7 +111,7 @@ struct SettingsPopover: View {
             Divider()
 
             HStack {
-                Text("Turbo Mouse v0.1.0")
+                Text("Turbo Mouse v0.2.0")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
                 Spacer()
@@ -178,6 +178,7 @@ struct DeviceDetailView: View {
                 pointerCard
                 scrollCard
                 smoothScrollCard
+                horizontalScrollCard
             }
             .padding(20)
         }
@@ -441,6 +442,59 @@ struct DeviceDetailView: View {
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .disabled(!isManaged)
+        .opacity(isManaged ? 1 : 0.5)
+    }
+
+    private var horizontalScrollCard: some View {
+        SettingsCard(title: "Horizontal Scroll", icon: "arrow.left.arrow.right") {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Scroll sideways while holding")
+                            .font(.system(size: 12, weight: .medium))
+                        Text("The wheel scrolls horizontally while the key is held")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                Picker("", selection: config.horizontalScrollModifier) {
+                    Text("Off").tag("none")
+                    Text("⇧ Shift").tag("shift")
+                    Text("⌃ Control").tag("control")
+                    Text("⌥ Option").tag("option")
+                    Text("⌘ Command").tag("command")
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .onChange(of: config.wrappedValue.horizontalScrollModifier) { _, modifier in
+                    if modifier != "none", !manager.hasAccessibility {
+                        ScrollSmoother.requestAccessibility()
+                    }
+                }
+
+                if config.wrappedValue.horizontalScrollModifier != "none", !manager.hasAccessibility {
+                    HStack(spacing: 8) {
+                        Label(
+                            "Accessibility access required to redirect scroll events",
+                            systemImage: "exclamationmark.triangle"
+                        )
+                        .font(.system(size: 10))
+                        .foregroundStyle(.orange)
+                        Spacer()
+                        Button("Open Settings") {
+                            let url = URL(
+                                string:
+                                    "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+                            )!
+                            NSWorkspace.shared.open(url)
+                        }
+                        .controlSize(.small)
+                    }
+                }
             }
         }
         .disabled(!isManaged)

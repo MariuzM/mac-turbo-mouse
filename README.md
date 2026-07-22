@@ -24,3 +24,7 @@ Requires macOS 14+.
 ./scripts/make-app.sh
 open build/TurboMouse.app
 ```
+
+## Todo
+
+- Move the scroll event tap and glide timer to a dedicated background thread (own run loop), so scroll latency can't be affected by UI stalls on the main thread.
