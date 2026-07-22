@@ -1,0 +1,24 @@
+{
+  "configurations": [
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:mac-turbo-mouse}",
+      "name": "Debug TurboMouse",
+      "target": "TurboMouse",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug TurboMouse"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:mac-turbo-mouse}",
+      "name": "Release TurboMouse",
+      "target": "TurboMouse",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release TurboMouse"
+    }
+  ]
+}
