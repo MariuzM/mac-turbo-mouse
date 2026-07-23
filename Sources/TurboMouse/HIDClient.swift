@@ -13,21 +13,25 @@ struct HIDService {
 final class HIDClient {
     private(set) var services: [HIDService] = []
 
-    private let client = IOHIDEventSystemClientCreateWithType(kCFAllocatorDefault, 2, nil)
+    private var client: OpaquePointer?
     private var retainedArray: CFArray?
     private let fixedOne = 65536.0
 
+    deinit {
+        if let client { CHIDReleaseClient(client) }
+    }
+
     func refresh() {
-        guard let client, let array = IOHIDEventSystemClientCopyServices(client) else {
-            retainedArray = nil
-            services = []
+        let newClient = IOHIDEventSystemClientCreateWithType(kCFAllocatorDefault, 2, nil)
+        guard let newClient, let array = IOHIDEventSystemClientCopyServices(newClient) else {
+            if let newClient { CHIDReleaseClient(newClient) }
             return
         }
         var found: [HIDService] = []
         for i in 0..<CFArrayGetCount(array) {
             guard let raw = CFArrayGetValueAtIndex(array, i) else { continue }
             let ref = OpaquePointer(raw)
-            guard IOHIDServiceClientConformsTo(ref, 1, 2) != 0 else { continue }
+            guard IOHIDServiceClientConformsTo(ref, 1, 2) != 0, isMouse(ref) else { continue }
             let pointerKey = readString(ref, "HIDPointerAccelerationType") ?? "HIDMouseAcceleration"
             let scrollKey = readString(ref, "HIDScrollAccelerationType") ?? "HIDMouseScrollAcceleration"
             guard readFixed(ref, pointerKey) != nil,
@@ -39,14 +43,17 @@ final class HIDClient {
                     ref: ref,
                     key: "\(vendor):\(product)",
                     name: readString(ref, "Product") ?? "Pointer Device",
-                    isMouse: isMouse(ref),
+                    isMouse: true,
                     pointerKey: pointerKey,
                     scrollKey: scrollKey
                 )
             )
         }
+        let oldClient = client
+        client = newClient
         retainedArray = array
         services = found
+        if let oldClient { CHIDReleaseClient(oldClient) }
     }
 
     func forEach(key: String? = nil, _ body: (HIDService) -> Void) {

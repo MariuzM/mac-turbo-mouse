@@ -10,3 +10,5 @@ extern CFArrayRef IOHIDEventSystemClientCopyServices(IOHIDEventSystemClientRef c
 extern boolean_t IOHIDServiceClientConformsTo(IOHIDServiceClientRef service, uint32_t usagePage, uint32_t usage);
 extern CFTypeRef IOHIDServiceClientCopyProperty(IOHIDServiceClientRef service, CFStringRef key) CF_RETURNS_RETAINED;
 extern Boolean IOHIDServiceClientSetProperty(IOHIDServiceClientRef service, CFStringRef key, CFTypeRef value);
+
+void CHIDReleaseClient(IOHIDEventSystemClientRef client);

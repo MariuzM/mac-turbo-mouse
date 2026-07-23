@@ -111,7 +111,7 @@ struct SettingsPopover: View {
             Divider()
 
             HStack {
-                Text("Turbo Mouse v0.2.0")
+                Text("Turbo Mouse v0.2.1")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
                 Spacer()
