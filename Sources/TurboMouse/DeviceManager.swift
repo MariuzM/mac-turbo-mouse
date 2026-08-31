@@ -1,5 +1,4 @@
 import AppKit
-import QuartzCore
 import SwiftUI
 
 final class DeviceManager: ObservableObject {
@@ -15,28 +14,13 @@ final class DeviceManager: ObservableObject {
         }
     }
 
-    enum CalibrationPhase: Equatable {
-        case idle
-        case running(progress: Double)
-        case failed(String)
-        case done(Double)
-    }
-
-    @Published var calibrationPhase: CalibrationPhase = .idle
-
     private static let configsKey = "deviceConfigs2"
+    private static let deviceNamesKey = "deviceNames"
     private let defaults = UserDefaults.standard
     private let hid = HIDClient()
+    private var deviceNames: [String: String] = [:]
     private var speedTouched: Set<String> = []
     private var timer: Timer?
-
-    private var calibratingKey: String?
-    private var calibrationMonitor: Any?
-    private var calibrationTimer: Timer?
-    private var calibrationBuckets: [(raw: Bool, distance: Double)] = []
-    private var calibrationDiscardUntil: CFTimeInterval = 0
-    private let calibrationBucketCount = 16
-    private let calibrationBucketDuration = 0.4
 
     private init() {
         if let data = defaults.data(forKey: Self.configsKey),
@@ -45,6 +29,7 @@ final class DeviceManager: ObservableObject {
         } else {
             configs = [:]
         }
+        deviceNames = defaults.dictionary(forKey: Self.deviceNamesKey) as? [String: String] ?? [:]
     }
 
     func start() {
@@ -73,10 +58,33 @@ final class DeviceManager: ObservableObject {
         )
     }
 
+    func importSettings(from sourceID: String, to destinationID: String) {
+        guard sourceID != destinationID,
+              var source = configs[sourceID],
+              let destination = configs[destinationID]
+        else { return }
+        source.managed = destination.managed
+        source.pointerBaseline = destination.pointerBaseline
+        source.scrollBaseline = destination.scrollBaseline
+        configs[destinationID] = source
+    }
+
+    func savedDevices(excluding id: String) -> [PointerDevice] {
+        let connected = Dictionary(uniqueKeysWithValues: devices.map { ($0.id, $0) })
+        return configs.keys
+            .filter { $0 != id }
+            .map { key in
+                connected[key]
+                    ?? PointerDevice(id: key, name: deviceNames[key] ?? "Mouse \(key)", isMouse: true)
+            }
+            .filter(\.isMouse)
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
     private func tick() {
         rescan()
         hid.forEach { s in
-            guard s.key != calibratingKey, let config = configs[s.key], config.managed else { return }
+            guard let config = configs[s.key], config.managed else { return }
             enforce(config, on: s)
         }
         let trusted = ScrollSmoother.hasAccessibility
@@ -90,9 +98,14 @@ final class DeviceManager: ObservableObject {
         hid.refresh()
         var found: [String: PointerDevice] = [:]
         var order: [String] = []
+        var namesChanged = false
         hid.forEach { s in
             if found[s.key] == nil { order.append(s.key) }
             found[s.key] = PointerDevice(id: s.key, name: s.name, isMouse: s.isMouse)
+            if deviceNames[s.key] != s.name {
+                deviceNames[s.key] = s.name
+                namesChanged = true
+            }
             if configs[s.key] == nil {
                 var config = DeviceConfig()
                 config.pointerBaseline = hid.readFixed(s.ref, s.pointerKey) ?? macDefaultPointerAcceleration
@@ -102,6 +115,9 @@ final class DeviceManager: ObservableObject {
                 config.managed = s.isMouse
                 configs[s.key] = config
             }
+        }
+        if namesChanged {
+            defaults.set(deviceNames, forKey: Self.deviceNamesKey)
         }
         let updated = order.map { found[$0]! }
         if updated != devices { devices = updated }
@@ -120,17 +136,16 @@ final class DeviceManager: ObservableObject {
     }
 
     private func enforce(_ config: DeviceConfig, on s: HIDService) {
-        let e = config.effective
         if let current = hid.readFixed(s.ref, s.pointerKey),
-           !satisfies(current, disabled: e.pointerDisabled, target: e.pointerAcceleration) {
-            writePointerAcceleration(e.pointerDisabled ? -1 : e.pointerAcceleration, on: s)
+           !satisfies(current, disabled: config.pointerDisabled, target: config.pointerAcceleration) {
+            writePointerAcceleration(config.pointerDisabled ? -1 : config.pointerAcceleration, on: s)
         }
         if let current = hid.readFixed(s.ref, s.scrollKey),
-           !satisfies(current, disabled: e.scrollDisabled, target: e.scrollAcceleration) {
-            writeScrollAcceleration(e.scrollDisabled ? -1 : e.scrollAcceleration, on: s)
+           !satisfies(current, disabled: config.scrollDisabled, target: config.scrollAcceleration) {
+            writeScrollAcceleration(config.scrollDisabled ? -1 : config.scrollAcceleration, on: s)
         }
-        if e.pointerSpeed != 1 {
-            let target = basePointerResolution / e.pointerSpeed
+        if config.pointerSpeed != 1 {
+            let target = basePointerResolution / config.pointerSpeed
             let current = hid.readFixed(s.ref, "HIDPointerResolution")
             if current == nil || abs(current! - target) > 0.5 {
                 hid.writeFixed(s.ref, "HIDPointerResolution", target)
@@ -144,12 +159,11 @@ final class DeviceManager: ObservableObject {
     }
 
     private func apply(_ key: String, _ config: DeviceConfig) {
-        let e = config.effective
         hid.forEach(key: key) { s in
-            writePointerAcceleration(e.pointerDisabled ? -1 : e.pointerAcceleration, on: s)
-            writeScrollAcceleration(e.scrollDisabled ? -1 : e.scrollAcceleration, on: s)
-            if e.pointerSpeed != 1 {
-                hid.writeFixed(s.ref, "HIDPointerResolution", basePointerResolution / e.pointerSpeed)
+            writePointerAcceleration(config.pointerDisabled ? -1 : config.pointerAcceleration, on: s)
+            writeScrollAcceleration(config.scrollDisabled ? -1 : config.scrollAcceleration, on: s)
+            if config.pointerSpeed != 1 {
+                hid.writeFixed(s.ref, "HIDPointerResolution", basePointerResolution / config.pointerSpeed)
                 speedTouched.insert(key)
             } else if speedTouched.contains(key) {
                 hid.writeFixed(s.ref, "HIDPointerResolution", basePointerResolution)
@@ -200,102 +214,5 @@ final class DeviceManager: ObservableObject {
         if let data = try? JSONEncoder().encode(configs) {
             defaults.set(data, forKey: Self.configsKey)
         }
-    }
-}
-
-extension DeviceManager {
-    func startCalibration(for key: String) {
-        cancelCalibration()
-        calibratingKey = key
-        calibrationBuckets = []
-        calibrationPhase = .running(progress: 0)
-        calibrationMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] e in
-            self?.recordCalibrationDelta(e)
-            return e
-        }
-        advanceCalibrationBucket()
-        calibrationTimer = Timer.scheduledTimer(withTimeInterval: calibrationBucketDuration, repeats: true) { [weak self] _ in
-            self?.advanceCalibrationBucket()
-        }
-    }
-
-    func cancelCalibration() {
-        stopCalibrationInstruments()
-        if let key = calibratingKey {
-            reapply(key)
-        }
-        calibratingKey = nil
-        calibrationPhase = .idle
-    }
-
-    private func stopCalibrationInstruments() {
-        calibrationTimer?.invalidate()
-        calibrationTimer = nil
-        if let monitor = calibrationMonitor {
-            NSEvent.removeMonitor(monitor)
-            calibrationMonitor = nil
-        }
-    }
-
-    private func reapply(_ key: String) {
-        guard let config = configs[key] else { return }
-        if config.managed {
-            apply(key, config)
-        } else {
-            restore(key, config)
-        }
-    }
-
-    private func advanceCalibrationBucket() {
-        guard let key = calibratingKey else { return }
-        if calibrationBuckets.count >= calibrationBucketCount {
-            finishCalibration()
-            return
-        }
-        let raw = calibrationBuckets.count % 2 == 0
-        hid.forEach(key: key) { s in
-            writePointerAcceleration(raw ? -1 : 0, on: s)
-            hid.writeFixed(s.ref, "HIDPointerResolution", basePointerResolution)
-        }
-        calibrationBuckets.append((raw: raw, distance: 0))
-        calibrationDiscardUntil = CACurrentMediaTime() + 0.12
-        calibrationPhase = .running(progress: Double(calibrationBuckets.count - 1) / Double(calibrationBucketCount))
-    }
-
-    private func recordCalibrationDelta(_ e: NSEvent) {
-        guard calibratingKey != nil, !calibrationBuckets.isEmpty, CACurrentMediaTime() >= calibrationDiscardUntil else { return }
-        calibrationBuckets[calibrationBuckets.count - 1].distance += hypot(e.deltaX, e.deltaY)
-    }
-
-    private func finishCalibration() {
-        guard let key = calibratingKey else { return }
-        stopCalibrationInstruments()
-        calibratingKey = nil
-
-        var ratios: [Double] = []
-        for i in calibrationBuckets.indices where !calibrationBuckets[i].raw {
-            var rawNeighbors: [Double] = []
-            if i > 0, calibrationBuckets[i - 1].raw { rawNeighbors.append(calibrationBuckets[i - 1].distance) }
-            if i + 1 < calibrationBuckets.count, calibrationBuckets[i + 1].raw {
-                rawNeighbors.append(calibrationBuckets[i + 1].distance)
-            }
-            guard !rawNeighbors.isEmpty else { continue }
-            let rawMean = rawNeighbors.reduce(0, +) / Double(rawNeighbors.count)
-            guard rawMean > 100, calibrationBuckets[i].distance > 20 else { continue }
-            ratios.append(calibrationBuckets[i].distance / rawMean)
-        }
-
-        if ratios.count < 4 {
-            calibrationPhase = .failed("Not enough movement captured. Keep the cursor inside the window and move continuously the whole time.")
-        } else {
-            let k = ratios.sorted()[ratios.count / 2]
-            let rounded = (k * 10000).rounded() / 10000
-            calibrationPhase = .done(rounded)
-            var config = configs[key] ?? DeviceConfig()
-            config.calibratedGain = rounded
-            configs[key] = config
-        }
-
-        reapply(key)
     }
 }

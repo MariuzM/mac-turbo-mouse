@@ -111,7 +111,7 @@ struct SettingsPopover: View {
             Divider()
 
             HStack {
-                Text("Turbo Mouse v0.2.1")
+                Text("Turbo Mouse v0.3.0")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
                 Spacer()
@@ -155,7 +155,6 @@ struct DeviceRow: View {
 
 struct DeviceDetailView: View {
     @EnvironmentObject private var manager: DeviceManager
-    @State private var showCalibration = false
     let device: PointerDevice
 
     private var config: Binding<DeviceConfig> {
@@ -166,15 +165,14 @@ struct DeviceDetailView: View {
         config.wrappedValue.managed
     }
 
-    private var windowsOn: Bool {
-        config.wrappedValue.windowsMode
+    private var importSources: [PointerDevice] {
+        manager.savedDevices(excluding: device.id)
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 header
-                windowsCard
                 pointerCard
                 scrollCard
                 smoothScrollCard
@@ -183,102 +181,6 @@ struct DeviceDetailView: View {
             .padding(20)
         }
         .background(Color(nsColor: .textBackgroundColor).opacity(0.4))
-        .sheet(isPresented: $showCalibration) {
-            CalibrationSheet(deviceKey: device.id, deviceName: device.name)
-                .environmentObject(manager)
-        }
-    }
-
-    private var windowsCard: some View {
-        SettingsCard(title: "Windows Mode (Experimental)", icon: "pc") {
-            ToggleRow(
-                title: "Match Windows pointer feel",
-                subtitle: "Mimics the Windows speed slider with Enhance Pointer Precision off",
-                isOn: config.windowsMode
-            )
-            if windowsOn {
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack {
-                        Text("Pointer speed")
-                            .font(.system(size: 12, weight: .medium))
-                        Spacer()
-                        Text("\(config.wrappedValue.windowsNotch)/11 · ×\(formattedMultiplier)")
-                            .font(.system(size: 11))
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(Color(nsColor: .quaternarySystemFill)))
-                    }
-                    Slider(value: notchBinding, in: 1...11, step: 1)
-                        .controlSize(.small)
-                        .tint(accentBlue)
-                    HStack {
-                        Text("1")
-                        Spacer()
-                        Text("6 = 1:1")
-                        Spacer()
-                        Text("11")
-                    }
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-                }
-
-                Divider()
-
-                HStack {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(calibrationStatus)
-                            .font(.system(size: 12, weight: .medium))
-                        Text(
-                            "Measures how macOS scales linear pointer movement on this Mac so notches translate exactly"
-                        )
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer()
-                    Button("Calibrate…") { showCalibration = true }
-                        .controlSize(.small)
-                }
-
-                if config.wrappedValue.calibratedGain == nil {
-                    Label(
-                        "Not calibrated yet — notches are approximate until you calibrate",
-                        systemImage: "exclamationmark.triangle"
-                    )
-                    .font(.system(size: 10))
-                    .foregroundStyle(.orange)
-                }
-
-                Text(
-                    "Scroll acceleration is turned off in Windows mode, matching Windows' fixed lines-per-notch scrolling."
-                )
-                .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .disabled(!isManaged)
-        .opacity(isManaged ? 1 : 0.5)
-    }
-
-    private var notchBinding: Binding<Double> {
-        Binding(
-            get: { Double(config.wrappedValue.windowsNotch) },
-            set: { config.windowsNotch.wrappedValue = Int($0.rounded()) }
-        )
-    }
-
-    private var formattedMultiplier: String {
-        String(format: "%.4g", config.wrappedValue.windowsMultiplier)
-    }
-
-    private var calibrationStatus: String {
-        if let gain = config.wrappedValue.calibratedGain {
-            return String(format: "Calibrated — measured gain ×%.3f", gain)
-        }
-        return "Calibration"
     }
 
     private var header: some View {
@@ -303,6 +205,18 @@ struct DeviceDetailView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            Menu {
+                ForEach(importSources) { source in
+                    Button(source.name) {
+                        manager.importSettings(from: source.id, to: device.id)
+                    }
+                }
+            } label: {
+                Label("Import Settings", systemImage: "square.and.arrow.down")
+            }
+            .controlSize(.small)
+            .disabled(importSources.isEmpty)
+            .help(importSources.isEmpty ? "No other saved mouse settings" : "Import settings from another mouse")
             Toggle("Manage", isOn: config.managed)
                 .toggleStyle(.switch)
                 .controlSize(.small)
@@ -311,15 +225,10 @@ struct DeviceDetailView: View {
 
     private var pointerCard: some View {
         SettingsCard(title: "Pointer", icon: "cursorarrow.motionlines") {
-            if windowsOn {
-                Label("Controlled by Windows mode", systemImage: "lock.fill")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-            }
             CurveView(
-                acceleration: config.wrappedValue.effective.pointerDisabled
+                acceleration: config.wrappedValue.pointerDisabled
                     ? 0
-                    : config.wrappedValue.effective.pointerAcceleration,
+                    : config.wrappedValue.pointerAcceleration,
                 isActive: isManaged
             )
             .frame(height: 100)
@@ -364,8 +273,8 @@ struct DeviceDetailView: View {
             .disabled(config.wrappedValue.pointerDisabled)
             .opacity(config.wrappedValue.pointerDisabled ? 0.4 : 1)
         }
-        .disabled(!isManaged || windowsOn)
-        .opacity(isManaged && !windowsOn ? 1 : 0.5)
+        .disabled(!isManaged)
+        .opacity(isManaged ? 1 : 0.5)
     }
 
     private var scrollCard: some View {
@@ -386,8 +295,8 @@ struct DeviceDetailView: View {
             .disabled(config.wrappedValue.scrollDisabled)
             .opacity(config.wrappedValue.scrollDisabled ? 0.4 : 1)
         }
-        .disabled(!isManaged || windowsOn)
-        .opacity(isManaged && !windowsOn ? 1 : 0.5)
+        .disabled(!isManaged)
+        .opacity(isManaged ? 1 : 0.5)
     }
 
     private var smoothScrollCard: some View {
@@ -531,90 +440,6 @@ struct DeviceDetailView: View {
 
     private func formatted(_ value: Double) -> String {
         String(format: "%.4g", value)
-    }
-}
-
-struct CalibrationSheet: View {
-    @EnvironmentObject private var manager: DeviceManager
-    @Environment(\.dismiss) private var dismiss
-    let deviceKey: String
-    let deviceName: String
-
-    var body: some View {
-        VStack(spacing: 18) {
-            Text("Calibrate \(deviceName)")
-                .font(.system(size: 15, weight: .semibold))
-
-            switch manager.calibrationPhase {
-            case .idle:
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.system(size: 34))
-                    .foregroundStyle(accentBlue)
-                Text(
-                    "Move the mouse in steady circles inside this window for about 6 seconds. The cursor speed will visibly change while measuring — that's expected."
-                )
-                .font(.system(size: 12))
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-                Button("Start") {
-                    manager.startCalibration(for: deviceKey)
-                }
-                .keyboardShortcut(.defaultAction)
-            case .running(let progress):
-                ProgressView(value: progress)
-                    .progressViewStyle(.linear)
-                    .frame(width: 240)
-                Text("Keep moving in circles…")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            case .failed(let message):
-                Image(systemName: "xmark.circle")
-                    .font(.system(size: 34))
-                    .foregroundStyle(.red)
-                Text(message)
-                    .font(.system(size: 12))
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.secondary)
-                Button("Try Again") {
-                    manager.startCalibration(for: deviceKey)
-                }
-            case .done(let gain):
-                Image(systemName: "checkmark.circle")
-                    .font(.system(size: 34))
-                    .foregroundStyle(.green)
-                Text(String(format: "Measured linear gain: ×%.3f", gain))
-                    .font(.system(size: 13, weight: .medium))
-                Text("Windows notches now translate exactly on this device.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                Button("Done") { dismiss() }
-                    .keyboardShortcut(.defaultAction)
-            }
-
-            if manager.calibrationPhase == .idle || isRunning {
-                Button("Cancel") { dismiss() }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(28)
-        .frame(width: 420, height: 300)
-        .onAppear {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                for window in NSApp.windows {
-                    window.acceptsMouseMovedEvents = true
-                }
-            }
-        }
-        .onDisappear {
-            manager.cancelCalibration()
-        }
-    }
-
-    private var isRunning: Bool {
-        if case .running = manager.calibrationPhase { return true }
-        return false
     }
 }
 
