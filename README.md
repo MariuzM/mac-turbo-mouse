@@ -1,3 +1,5 @@
+<img src="Resources/AppIcon.png" width="128" alt="Turbo Mouse icon">
+
 # Turbo Mouse
 
 A macOS menu bar app for tuning your mouse, per device.

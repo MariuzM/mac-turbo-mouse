@@ -1,0 +1,8 @@
+{
+  "name": "turbo-mouse",
+  "version": "0.3.0",
+  "private": true,
+  "scripts": {
+    "build": "./scripts/make-app.sh"
+  }
+}
