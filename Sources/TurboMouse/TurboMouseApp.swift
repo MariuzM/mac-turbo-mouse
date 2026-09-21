@@ -11,6 +11,7 @@ struct TurboMouseApp: App {
             SettingsWindow()
                 .environmentObject(manager)
         }
+        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 720, height: 600)
 
         MenuBarExtra {

@@ -1,10 +1,10 @@
-#!/bin/bash
+#!/bin/zsh
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "${0:A:h}/.."
 
 swift build -c release
 
-APP=build/TurboMouse.app
+APP="build/Turbo Mouse.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
@@ -28,6 +28,8 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
 	<string>dev.marius.turbomouse</string>
 	<key>CFBundleName</key>
 	<string>Turbo Mouse</string>
+	<key>CFBundleDisplayName</key>
+	<string>Turbo Mouse</string>
 	<key>CFBundleExecutable</key>
 	<string>TurboMouse</string>
 	<key>CFBundleIconFile</key>
@@ -37,7 +39,7 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.3.1</string>
+	<string>0.3.2</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>

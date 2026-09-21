@@ -15,7 +15,7 @@ A macOS menu bar app for tuning your mouse, per device.
 
 ## Install
 
-Download the latest release from [Releases](https://github.com/MariuzM/mac-turbo-mouse/releases), unzip, and move `TurboMouse.app` to `/Applications`. On first launch: right-click → Open.
+Download the latest release from [Releases](https://github.com/MariuzM/mac-turbo-mouse/releases), unzip, and move `Turbo Mouse.app` to `/Applications`. On first launch: right-click → Open.
 
 Requires macOS 14+.
 
@@ -23,7 +23,7 @@ Requires macOS 14+.
 
 ```sh
 ./scripts/make-app.sh
-open build/TurboMouse.app
+open "build/Turbo Mouse.app"
 ```
 
 ## Todo
