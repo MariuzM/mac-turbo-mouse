@@ -7,9 +7,10 @@ struct SettingsWindow: View {
     @EnvironmentObject private var manager: DeviceManager
     @State private var selection: String?
     @State private var showSettings = false
+    @State private var columnVisibility = NavigationSplitViewVisibility.all
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             List(selection: $selection) {
                 Section("Devices") {
                     ForEach(manager.devices) { device in
@@ -54,10 +55,17 @@ struct SettingsWindow: View {
         .frame(minWidth: 680, minHeight: 560)
         .navigationTitle("Turbo Mouse")
         .onAppear {
-            if selection == nil {
-                selection = (manager.devices.first(where: \.isMouse) ?? manager.devices.first)?.id
-            }
+            columnVisibility = .all
+            selectDefaultDevice()
         }
+        .onChange(of: manager.devices) {
+            selectDefaultDevice()
+        }
+    }
+
+    private func selectDefaultDevice() {
+        guard selection == nil || !manager.devices.contains(where: { $0.id == selection }) else { return }
+        selection = (manager.devices.first(where: \.isMouse) ?? manager.devices.first)?.id
     }
 }
 

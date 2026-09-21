@@ -7,7 +7,11 @@ final class ScrollSmoother {
 
     var step: Double = 40
     var duration: Double = 0.25
-    var smoothingEnabled = false
+    var smoothingEnabled = false {
+        didSet {
+            if !smoothingEnabled { resetPendingScroll() }
+        }
+    }
     var horizontalModifier: CGEventFlags?
 
     private static let marker: Int64 = 0x54424D53
@@ -17,6 +21,7 @@ final class ScrollSmoother {
     private var timer: Timer?
     private var pendingX: Double = 0
     private var pendingY: Double = 0
+    private var pendingFlags: CGEventFlags = []
     private var lastTick: CFTimeInterval = 0
 
     static var hasAccessibility: Bool {
@@ -40,10 +45,10 @@ final class ScrollSmoother {
             place: .headInsertEventTap,
             options: .defaultTap,
             eventsOfInterest: mask,
-            callback: { _, type, event, info in
-                guard let info else { return Unmanaged.passUnretained(event) }
+            callback: { _, type, e, info in
+                guard let info else { return Unmanaged.passUnretained(e) }
                 let smoother = Unmanaged<ScrollSmoother>.fromOpaque(info).takeUnretainedValue()
-                return smoother.handle(type: type, event: event)
+                return smoother.handle(type: type, event: e)
             },
             userInfo: Unmanaged.passUnretained(self).toOpaque()
         ) else { return }
@@ -62,53 +67,65 @@ final class ScrollSmoother {
         }
         runLoopSource = nil
         tap = nil
+        resetPendingScroll()
+    }
+
+    private func resetPendingScroll() {
         timer?.invalidate()
         timer = nil
         pendingX = 0
         pendingY = 0
+        pendingFlags = []
     }
 
-    private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+    private func handle(type: CGEventType, event e: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
-            return Unmanaged.passUnretained(event)
+            return Unmanaged.passUnretained(e)
         }
         guard type == .scrollWheel,
-              event.getIntegerValueField(.eventSourceUserData) != Self.marker,
-              event.getIntegerValueField(.scrollWheelEventIsContinuous) == 0
-        else { return Unmanaged.passUnretained(event) }
+              e.getIntegerValueField(.eventSourceUserData) != Self.marker,
+              e.getIntegerValueField(.scrollWheelEventIsContinuous) == 0
+        else { return Unmanaged.passUnretained(e) }
 
-        let rotate = horizontalModifier.map { event.flags.contains($0) } ?? false
-        guard smoothingEnabled || rotate else { return Unmanaged.passUnretained(event) }
+        var dy = Double(e.getIntegerValueField(.scrollWheelEventDeltaAxis1))
+        var dx = Double(e.getIntegerValueField(.scrollWheelEventDeltaAxis2))
+        guard dx != 0 || dy != 0 else { return Unmanaged.passUnretained(e) }
 
-        var dy = Double(event.getIntegerValueField(.scrollWheelEventDeltaAxis1))
-        var dx = Double(event.getIntegerValueField(.scrollWheelEventDeltaAxis2))
-        guard dx != 0 || dy != 0 else { return Unmanaged.passUnretained(event) }
+        let rotate = dy != 0 && (horizontalModifier.map { e.flags.contains($0) } ?? false)
+        guard smoothingEnabled || rotate else { return Unmanaged.passUnretained(e) }
 
+        var flags = e.flags
         if rotate {
-            dx = dy
+            dx += dy
             dy = 0
+            if let horizontalModifier { flags.remove(horizontalModifier) }
         }
 
         if smoothingEnabled {
+            if flags != pendingFlags {
+                post(y: pendingY, x: pendingX)
+                resetPendingScroll()
+            }
+            pendingFlags = flags
             pendingY += dy * step
             pendingX += dx * step
             startTimerIfNeeded()
             return nil
         }
 
-        let points = event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1)
-        let fixed = event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1)
-        event.setIntegerValueField(.scrollWheelEventDeltaAxis2, value: Int64(dx))
-        event.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: 0)
-        event.setIntegerValueField(.scrollWheelEventPointDeltaAxis2, value: points)
-        event.setIntegerValueField(.scrollWheelEventPointDeltaAxis1, value: 0)
-        event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: fixed)
-        event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: 0)
-        if let horizontalModifier {
-            event.flags.remove(horizontalModifier)
-        }
-        return Unmanaged.passUnretained(event)
+        let points = e.getIntegerValueField(.scrollWheelEventPointDeltaAxis1)
+            + e.getIntegerValueField(.scrollWheelEventPointDeltaAxis2)
+        let fixed = e.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1)
+            + e.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2)
+        e.setIntegerValueField(.scrollWheelEventDeltaAxis2, value: Int64(dx))
+        e.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: 0)
+        e.setIntegerValueField(.scrollWheelEventPointDeltaAxis2, value: points)
+        e.setIntegerValueField(.scrollWheelEventPointDeltaAxis1, value: 0)
+        e.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: fixed)
+        e.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: 0)
+        e.flags = flags
+        return Unmanaged.passUnretained(e)
     }
 
     private func startTimerIfNeeded() {
@@ -149,7 +166,7 @@ final class ScrollSmoother {
         pendingY += y - Double(iy)
         pendingX += x - Double(ix)
         guard iy != 0 || ix != 0 else { return }
-        guard let event = CGEvent(
+        guard let e = CGEvent(
             scrollWheelEvent2Source: nil,
             units: .pixel,
             wheelCount: 2,
@@ -157,7 +174,8 @@ final class ScrollSmoother {
             wheel2: ix,
             wheel3: 0
         ) else { return }
-        event.setIntegerValueField(.eventSourceUserData, value: Self.marker)
-        event.post(tap: .cgSessionEventTap)
+        e.flags = pendingFlags
+        e.setIntegerValueField(.eventSourceUserData, value: Self.marker)
+        e.post(tap: .cgSessionEventTap)
     }
 }

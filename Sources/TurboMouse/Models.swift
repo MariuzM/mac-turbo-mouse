@@ -20,6 +20,7 @@ struct DeviceConfig: Codable, Equatable {
     var scrollAcceleration = macDefaultScrollAcceleration
     var pointerBaseline = macDefaultPointerAcceleration
     var scrollBaseline = macDefaultScrollAcceleration
+    var pointerResolutionBaseline = basePointerResolution
     var smoothScrolling = false
     var scrollStep = 40.0
     var scrollDuration = 0.25
@@ -47,6 +48,7 @@ struct DeviceConfig: Codable, Equatable {
         scrollAcceleration = try c.decodeIfPresent(Double.self, forKey: .scrollAcceleration) ?? macDefaultScrollAcceleration
         pointerBaseline = try c.decodeIfPresent(Double.self, forKey: .pointerBaseline) ?? macDefaultPointerAcceleration
         scrollBaseline = try c.decodeIfPresent(Double.self, forKey: .scrollBaseline) ?? macDefaultScrollAcceleration
+        pointerResolutionBaseline = try c.decodeIfPresent(Double.self, forKey: .pointerResolutionBaseline) ?? basePointerResolution
         smoothScrolling = try c.decodeIfPresent(Bool.self, forKey: .smoothScrolling) ?? false
         scrollStep = try c.decodeIfPresent(Double.self, forKey: .scrollStep) ?? 40
         scrollDuration = try c.decodeIfPresent(Double.self, forKey: .scrollDuration) ?? 0.25
@@ -62,6 +64,7 @@ struct DeviceConfig: Codable, Equatable {
         case scrollAcceleration
         case pointerBaseline
         case scrollBaseline
+        case pointerResolutionBaseline
         case smoothScrolling
         case scrollStep
         case scrollDuration

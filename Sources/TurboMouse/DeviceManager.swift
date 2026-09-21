@@ -46,6 +46,10 @@ final class DeviceManager: ObservableObject {
     }
 
     func restoreAll() {
+        timer?.invalidate()
+        timer = nil
+        ScrollSmoother.shared.setEnabled(false)
+
         for (key, config) in configs where config.managed {
             restore(key, config)
         }
@@ -66,6 +70,7 @@ final class DeviceManager: ObservableObject {
         source.managed = destination.managed
         source.pointerBaseline = destination.pointerBaseline
         source.scrollBaseline = destination.scrollBaseline
+        source.pointerResolutionBaseline = destination.pointerResolutionBaseline
         configs[destinationID] = source
     }
 
@@ -110,6 +115,7 @@ final class DeviceManager: ObservableObject {
                 var config = DeviceConfig()
                 config.pointerBaseline = hid.readFixed(s.ref, s.pointerKey) ?? macDefaultPointerAcceleration
                 config.scrollBaseline = hid.readFixed(s.ref, s.scrollKey) ?? macDefaultScrollAcceleration
+                config.pointerResolutionBaseline = hid.readFixed(s.ref, "HIDPointerResolution") ?? basePointerResolution
                 config.pointerAcceleration = config.pointerBaseline
                 config.scrollAcceleration = config.scrollBaseline
                 config.managed = s.isMouse
@@ -144,7 +150,7 @@ final class DeviceManager: ObservableObject {
            !satisfies(current, disabled: config.scrollDisabled, target: config.scrollAcceleration) {
             writeScrollAcceleration(config.scrollDisabled ? -1 : config.scrollAcceleration, on: s)
         }
-        if config.pointerSpeed != 1 {
+        if !config.pointerDisabled, config.pointerSpeed != 1 {
             let target = basePointerResolution / config.pointerSpeed
             let current = hid.readFixed(s.ref, "HIDPointerResolution")
             if current == nil || abs(current! - target) > 0.5 {
@@ -155,20 +161,23 @@ final class DeviceManager: ObservableObject {
     }
 
     private func satisfies(_ current: Double, disabled: Bool, target: Double) -> Bool {
-        disabled ? current <= 0.0001 : abs(current - target) <= 0.0001
+        abs(current - (disabled ? -1 : target)) <= 0.0001
     }
 
     private func apply(_ key: String, _ config: DeviceConfig) {
         hid.forEach(key: key) { s in
             writePointerAcceleration(config.pointerDisabled ? -1 : config.pointerAcceleration, on: s)
             writeScrollAcceleration(config.scrollDisabled ? -1 : config.scrollAcceleration, on: s)
-            if config.pointerSpeed != 1 {
+            if !config.pointerDisabled, config.pointerSpeed != 1 {
                 hid.writeFixed(s.ref, "HIDPointerResolution", basePointerResolution / config.pointerSpeed)
                 speedTouched.insert(key)
             } else if speedTouched.contains(key) {
-                hid.writeFixed(s.ref, "HIDPointerResolution", basePointerResolution)
-                speedTouched.remove(key)
+                hid.writeFixed(s.ref, "HIDPointerResolution", config.pointerResolutionBaseline)
             }
+        }
+
+        if config.pointerDisabled || config.pointerSpeed == 1 {
+            speedTouched.remove(key)
         }
     }
 
@@ -177,7 +186,7 @@ final class DeviceManager: ObservableObject {
             writePointerAcceleration(config.pointerBaseline, on: s)
             writeScrollAcceleration(config.scrollBaseline, on: s)
             if speedTouched.contains(key) || config.pointerSpeed != 1 {
-                hid.writeFixed(s.ref, "HIDPointerResolution", basePointerResolution)
+                hid.writeFixed(s.ref, "HIDPointerResolution", config.pointerResolutionBaseline)
             }
         }
         speedTouched.remove(key)
@@ -198,8 +207,9 @@ final class DeviceManager: ObservableObject {
     }
 
     private func syncSmoother() {
-        let smoothing = configs.values.first { $0.managed && $0.smoothScrolling }
-        let rotating = configs.values.first { $0.managed && $0.horizontalModifierFlags != nil }
+        let connectedConfigs = devices.sorted { $0.id < $1.id }.compactMap { configs[$0.id] }
+        let smoothing = connectedConfigs.first { $0.managed && $0.smoothScrolling }
+        let rotating = connectedConfigs.first { $0.managed && $0.horizontalModifierFlags != nil }
         let smoother = ScrollSmoother.shared
         if let smoothing {
             smoother.step = smoothing.scrollStep
